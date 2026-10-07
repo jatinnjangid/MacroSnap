@@ -18,15 +18,27 @@ WELCOME_MESSAGE_TEMPLATE = (
     "Snap a photo of your meal, or just tell me what you're eating, and I'll "
     "break down the calories and macros in seconds. No food diary, no "
     "guesswork.\n\n"
-    "When you're done, hit \"Send details to Telegram\" below and I'll send "
-    "your full summary straight to your Telegram."
+    "When you're ready, hit \"📤 Send Summary\" above and I'll send your "
+    "daily nutrition breakdown straight to your phone!"
 )
 
 
-SUMMARY_REQUEST_PROMPT = (
-    "Summarize every meal we've discussed in this conversation into one "
-    "Telegram-friendly message: list each item with its estimated calories, "
-    "then give a running total of calories and macros (protein/carbs/fat) "
-    "for everything combined. Keep it short, plain text with a couple of "
-    "emojis, no markdown - ready to send exactly as you write it."
+SUMMARY_REQUEST_PROMPT_TEMPLATE = (
+    "Summarize every meal discussed in this conversation for user '{name}'. "
+    "Follow this exact clean structure:\n\n"
+    "MacroSnap Daily Summary 🥗\n\n"
+    "Hi {name} 👋\n\n"
+    "Your meal summary:\n"
+    "[For each meal item:]\n"
+    "🍽️ [Meal Name/Description]\n"
+    "🔥 Calories: [X] kcal\n"
+    "💪 Protein: [X]g\n"
+    "🍚 Carbs: [X]g\n"
+    "🥑 Fat: [X]g\n\n"
+    "📊 Daily Totals:\n"
+    "🔥 Total Calories: [Sum] kcal\n"
+    "💪 Total Protein: [Sum]g | 🍚 Carbs: [Sum]g | 🥑 Fat: [Sum]g\n\n"
+    "Keep tracking your nutrition! ✨\n\n"
+    "Write in clean plain text with emojis, ready to send directly as a chat message."
 )
+

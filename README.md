@@ -59,12 +59,12 @@ Open **`http://localhost:8501`** in your browser!
 
 ---
 
-## 📱 How to use Telegram Delivery
+## 📱 Client SaaS Delivery Flow
 
-1. Open your bot on Telegram and tap **Start** (or send `hello`).
-2. Open the MacroSnap app and enter your name and **Telegram Chat ID**.
-3. Log your meals with photos or text.
-4. Click **📤 Send to Telegram** to get your formatted breakdown!
+1. Enter **Full Name**, **Mobile Number**, and pick **Telegram** or **WhatsApp**.
+2. If Telegram is selected, tap the link to open `@MacroSnapjatinbot`, tap **Start**, and click **Verify Connection** (no technical IDs required).
+3. Log meals with photos or text.
+4. Click **📤 Send Summary** to deliver the formatted breakdown!
 
 ---
 
