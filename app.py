@@ -55,8 +55,8 @@ def send_telegram(chat_id, text):
             description = data.get("description", "Failed to send Telegram message.")
             if "chat not found" in description.lower():
                 return False, (
-                    f"Chat not found for your account. Please tap [@{BOT_USERNAME}](https://t.me/{BOT_USERNAME}) "
-                    "and press Start so the bot has permission to message you."
+                    f"Chat not found for ID '{chat_id}'. Please open [@{BOT_USERNAME}](https://t.me/{BOT_USERNAME}) "
+                    "and press Start so Telegram allows the bot to message you."
                 )
             return False, description
     except Exception as error:
@@ -83,17 +83,35 @@ def send_whatsapp_twilio(phone, text):
 
 
 def get_latest_telegram_chat():
+    """Detects latest user interaction with the bot from Telegram updates."""
     if not TELEGRAM_BOT_TOKEN:
         return None
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-        response = requests.get(url, timeout=10)
+        params = {
+            "limit": 50,
+            "allowed_updates": ["message", "edited_message", "channel_post", "my_chat_member", "chat_member", "callback_query"]
+        }
+        response = requests.get(url, params=params, timeout=10)
         data = response.json()
         if data.get("ok") and data.get("result"):
             for update in reversed(data["result"]):
+                chat = None
+                sender = {}
                 if "message" in update and "chat" in update["message"]:
                     chat = update["message"]["chat"]
                     sender = update["message"].get("from", {})
+                elif "my_chat_member" in update and "chat" in update["my_chat_member"]:
+                    chat = update["my_chat_member"]["chat"]
+                    sender = update["my_chat_member"].get("from", {})
+                elif "edited_message" in update and "chat" in update["edited_message"]:
+                    chat = update["edited_message"]["chat"]
+                    sender = update["edited_message"].get("from", {})
+                elif "callback_query" in update and "message" in update["callback_query"]:
+                    chat = update["callback_query"]["message"].get("chat")
+                    sender = update["callback_query"].get("from", {})
+
+                if chat and "id" in chat:
                     return {
                         "chat_id": str(chat["id"]),
                         "first_name": chat.get("first_name") or sender.get("first_name", ""),
@@ -109,7 +127,7 @@ def render_message(message):
         if message["kind"] == "text":
             st.write(message["content"])
         elif message["kind"] == "image":
-            st.image(message["content"])
+            st.image(message["content"], width=380)
 
 
 def add_message(role, kind, content):
@@ -149,40 +167,70 @@ if not st.session_state.get("onboarded", False):
         st.title("📲 Connect Telegram")
         st.write(f"Hi **{st.session_state.get('name', 'there')}**! To receive your nutrition summaries automatically:")
 
-        st.markdown(
-            f"""
-            1. Tap the button below to open our bot on Telegram.
-            2. Press **Start** (or send any message like `hi`).
-            3. Return here and click **Verify Connection**.
-            """
-        )
+        tab_auto, tab_manual = st.tabs(["⚡ Auto-Detect (Recommended)", "✍️ Enter Chat ID Directly"])
 
-        st.link_button(
-            f"🤖 Open @{BOT_USERNAME} on Telegram",
-            f"https://t.me/{BOT_USERNAME}",
-            use_container_width=True,
-        )
+        with tab_auto:
+            st.markdown(
+                f"""
+                1. Tap the button below to open our bot on Telegram.
+                2. Press **Start** (or send any text like `hi`).
+                3. Return here and click **Detect Telegram**.
+                """
+            )
 
-        st.write("")
+            st.link_button(
+                f"🤖 Open @{BOT_USERNAME} on Telegram",
+                f"https://t.me/{BOT_USERNAME}?start=link",
+                use_container_width=True,
+            )
 
-        col_v, col_s = st.columns([1, 1])
-        with col_v:
-            if st.button("✅ Verify Connection", use_container_width=True, type="primary"):
-                latest = get_latest_telegram_chat()
-                if latest:
-                    st.session_state.telegram_chat_id = latest["chat_id"]
-                    st.session_state.telegram_username = latest.get("username", "")
+            st.write("")
+
+            col_v, col_s = st.columns([1, 1])
+            with col_v:
+                if st.button("✅ Detect Telegram", use_container_width=True, type="primary", key="onboard_detect"):
+                    latest = get_latest_telegram_chat()
+                    if latest:
+                        st.session_state.telegram_chat_id = latest["chat_id"]
+                        st.session_state.telegram_username = latest.get("username", "")
+                        st.session_state.onboarded = True
+                        st.session_state.awaiting_telegram_link = False
+                        send_telegram(latest["chat_id"], f"🎉 Hey {st.session_state.get('name', '')}! MacroSnap is now linked to your Telegram.")
+                        st.success(f"Connected as @{latest.get('username') or latest.get('first_name')}!")
+                        st.rerun()
+                    else:
+                        st.error(f"No message found yet. Please tap Start in @{BOT_USERNAME} first, then click Detect!")
+            with col_s:
+                if st.button("Skip for now →", use_container_width=True, key="onboard_skip_1"):
                     st.session_state.onboarded = True
                     st.session_state.awaiting_telegram_link = False
-                    st.success(f"Connected as @{latest.get('username') or latest.get('first_name')}!")
                     st.rerun()
-                else:
-                    st.error(f"No message found yet. Please tap Start in @{BOT_USERNAME} first, then click Verify!")
-        with col_s:
-            if st.button("Skip for now →", use_container_width=True):
-                st.session_state.onboarded = True
-                st.session_state.awaiting_telegram_link = False
-                st.rerun()
+
+        with tab_manual:
+            st.markdown("If auto-detect isn't picking up your message, enter your numeric Chat ID:")
+            manual_chat_id = st.text_input("Telegram Chat ID", placeholder="e.g. 123456789", key="onboard_manual_id")
+            st.caption("💡 Don't know your ID? Open [@userinfobot](https://t.me/userinfobot) on Telegram to get your numeric ID in 2 seconds.")
+
+            col_m, col_s2 = st.columns([1, 1])
+            with col_m:
+                if st.button("🔗 Connect & Verify", use_container_width=True, type="primary", key="onboard_manual_btn"):
+                    if manual_chat_id.strip():
+                        ok, msg = send_telegram(manual_chat_id.strip(), f"🎉 Hey {st.session_state.get('name', '')}! MacroSnap is now connected to your Telegram.")
+                        if ok:
+                            st.session_state.telegram_chat_id = manual_chat_id.strip()
+                            st.session_state.onboarded = True
+                            st.session_state.awaiting_telegram_link = False
+                            st.success("Connected successfully!")
+                            st.rerun()
+                        else:
+                            st.error(f"Could not connect: {msg}")
+                    else:
+                        st.warning("Please enter your Chat ID.")
+            with col_s2:
+                if st.button("Skip for now →", use_container_width=True, key="onboard_skip_2"):
+                    st.session_state.onboarded = True
+                    st.session_state.awaiting_telegram_link = False
+                    st.rerun()
 
         st.stop()
 
@@ -218,7 +266,6 @@ if not st.session_state.get("onboarded", False):
             st.session_state.messages = []
 
             if delivery_pref == "Telegram":
-                # Check if they have already sent a message recently
                 latest = get_latest_telegram_chat()
                 if latest:
                     st.session_state.telegram_chat_id = latest["chat_id"]
@@ -251,18 +298,63 @@ with st.sidebar:
         if st.session_state.get("telegram_chat_id"):
             username_tag = f"(@{st.session_state.telegram_username})" if st.session_state.get("telegram_username") else ""
             st.success(f"Telegram Connected ✅ {username_tag}")
+            st.caption(f"Chat ID: `{st.session_state.telegram_chat_id}`")
+
+            col_t1, col_t2 = st.columns([1, 1])
+            with col_t1:
+                if st.button("🔔 Test Ping", use_container_width=True):
+                    ok, info = send_telegram(
+                        st.session_state.telegram_chat_id,
+                        f"🔔 Test Ping from MacroSnap! Telegram delivery is working great for {st.session_state.get('name', 'you')}."
+                    )
+                    if ok:
+                        st.toast("✅ Test ping sent to Telegram!", icon="🎉")
+                    else:
+                        st.error(f"Error: {info}")
+            with col_t2:
+                if st.button("Disconnect", use_container_width=True):
+                    st.session_state.telegram_chat_id = None
+                    st.session_state.telegram_username = ""
+                    st.rerun()
         else:
             st.warning("Telegram Not Linked ⚠️")
-            st.link_button(f"Open @{BOT_USERNAME}", f"https://t.me/{BOT_USERNAME}", use_container_width=True)
-            if st.button("🔗 Link Telegram", use_container_width=True):
-                latest = get_latest_telegram_chat()
-                if latest:
-                    st.session_state.telegram_chat_id = latest["chat_id"]
-                    st.session_state.telegram_username = latest.get("username", "")
-                    st.success("Linked successfully!")
-                    st.rerun()
-                else:
-                    st.error("No recent message found. Tap Start on Telegram first!")
+
+            tab_side_auto, tab_side_man = st.tabs(["⚡ Auto-Detect", "✍️ Manual ID"])
+
+            with tab_side_auto:
+                st.link_button(
+                    f"Open @{BOT_USERNAME}",
+                    f"https://t.me/{BOT_USERNAME}?start=link",
+                    use_container_width=True
+                )
+                if st.button("🔗 Detect Telegram", use_container_width=True, key="sidebar_detect_btn"):
+                    latest = get_latest_telegram_chat()
+                    if latest:
+                        st.session_state.telegram_chat_id = latest["chat_id"]
+                        st.session_state.telegram_username = latest.get("username", "")
+                        send_telegram(latest["chat_id"], f"🎉 Hey {st.session_state.get('name', '')}! MacroSnap is now linked to your Telegram.")
+                        st.success("Linked successfully!")
+                        st.rerun()
+                    else:
+                        st.error("No recent message found. Tap Start in Telegram first, or use the 'Manual ID' tab!")
+
+            with tab_side_man:
+                manual_id = st.text_input("Telegram Chat ID", placeholder="e.g. 123456789", key="sidebar_manual_id")
+                st.caption("Find your ID via [@userinfobot](https://t.me/userinfobot)")
+                if st.button("🔗 Connect Chat ID", use_container_width=True, key="sidebar_manual_save"):
+                    if manual_id.strip():
+                        ok, msg = send_telegram(
+                            manual_id.strip(),
+                            f"🎉 Hey {st.session_state.get('name', '')}! MacroSnap is now connected to your Telegram."
+                        )
+                        if ok:
+                            st.session_state.telegram_chat_id = manual_id.strip()
+                            st.success("Connected successfully!")
+                            st.rerun()
+                        else:
+                            st.error(f"Could not connect: {msg}")
+                    else:
+                        st.warning("Please enter your Chat ID.")
 
     with st.expander("✏️ Edit Profile", expanded=False):
         new_name = st.text_input("Name", value=st.session_state.get("name", ""), key="edit_name")
@@ -274,11 +366,19 @@ with st.sidebar:
             key="edit_pref",
             horizontal=True
         )
+        new_tg_id = st.text_input(
+            "Telegram Chat ID",
+            value=st.session_state.get("telegram_chat_id") or "",
+            key="edit_tg_id",
+            help="Your numeric Telegram chat ID"
+        )
 
         if st.button("Save Profile", use_container_width=True):
             st.session_state.name = new_name.strip()
             st.session_state.phone = new_phone.strip()
             st.session_state.delivery_pref = new_pref
+            if new_tg_id.strip():
+                st.session_state.telegram_chat_id = new_tg_id.strip()
             st.success("Profile updated!")
             st.rerun()
 
@@ -311,7 +411,6 @@ with action_col:
             if client_pref == "Telegram":
                 chat_id = st.session_state.get("telegram_chat_id")
                 if not chat_id:
-                    # Try one quick auto-detect
                     latest = get_latest_telegram_chat()
                     if latest:
                         chat_id = latest["chat_id"]
@@ -325,7 +424,7 @@ with action_col:
                     else:
                         st.error(f"Couldn't send: {info}")
                 else:
-                    st.warning(f"⚠️ Telegram is not linked yet! Open [@{BOT_USERNAME}](https://t.me/{BOT_USERNAME}), send `hello`, then click 'Link Telegram' in the sidebar.")
+                    st.warning(f"⚠️ Telegram is not linked yet! Open [@{BOT_USERNAME}](https://t.me/{BOT_USERNAME}) or enter your Chat ID in the sidebar.")
             else:
                 # WhatsApp Delivery
                 clean_phone = "".join(filter(lambda c: c.isdigit(), client_phone))
@@ -358,6 +457,40 @@ if not st.session_state.messages:
 else:
     for message in st.session_state.messages:
         render_message(message)
+
+
+# Quick Actions for the conversation
+last_assistant_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "assistant" and m["kind"] == "text"), None)
+if last_assistant_msg and len(st.session_state.messages) > 1:
+    st.write("")
+    col_send1, col_send2 = st.columns([1, 1])
+
+    with col_send1:
+        if client_pref == "Telegram":
+            if st.session_state.get("telegram_chat_id"):
+                if st.button("📤 Send Breakdown to Telegram", use_container_width=True):
+                    ok, info = send_telegram(
+                        st.session_state.telegram_chat_id,
+                        f"🥗 MacroSnap Meal Breakdown for {client_name}:\n\n{last_assistant_msg}"
+                    )
+                    if ok:
+                        st.success("✅ Breakdown sent to your Telegram!")
+                    else:
+                        st.error(f"Could not send: {info}")
+            else:
+                st.info("💡 Link Telegram in the sidebar to send meals instantly to your phone.")
+        else:
+            clean_phone = "".join(filter(lambda c: c.isdigit(), client_phone))
+            encoded_msg = urllib.parse.quote(f"🥗 MacroSnap Meal Breakdown for {client_name}:\n\n{last_assistant_msg}")
+            wa_url = f"https://api.whatsapp.com/send?phone={clean_phone}&text={encoded_msg}"
+            st.link_button("💬 Send Breakdown to WhatsApp", wa_url, use_container_width=True)
+
+    with col_send2:
+        if client_pref == "Telegram" and not st.session_state.get("telegram_chat_id"):
+            clean_phone = "".join(filter(lambda c: c.isdigit(), client_phone))
+            encoded_msg = urllib.parse.quote(f"🥗 MacroSnap Meal Breakdown for {client_name}:\n\n{last_assistant_msg}")
+            wa_url = f"https://api.whatsapp.com/send?phone={clean_phone}&text={encoded_msg}"
+            st.link_button("💬 Send to WhatsApp Instead", wa_url, use_container_width=True)
 
 
 # Meal Tracking Chat Input
